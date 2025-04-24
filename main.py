@@ -9,20 +9,43 @@ import numpy as np
 from tqdm import tqdm
 
 from data_loader.data_loader import load_price_data
-from simulate.simulation import simulate_subset
 from utils.finance import annualize_covariance, annualize_returns, compute_daily_returns
 
+"""
+Worker initializer: set global data for combination processing.
+"""
+GLOBAL_W: np.ndarray
+GLOBAL_MU: np.ndarray
+GLOBAL_SIGMA: np.ndarray
+GLOBAL_RF: float
+GLOBAL_N: int
 
-def process_combination(args):
-    # args: (seed_offset, subset, mu_all, sigma_all, n_samples, r_free)
-    seed_offset, subset, mu_all, sigma_all, n_samples, r_free = args
+
+def init_worker(Wsamples, mu_arr, sigma_arr, r_free, n_select):
+    global GLOBAL_W, GLOBAL_MU, GLOBAL_SIGMA, GLOBAL_RF, GLOBAL_N
+    GLOBAL_W = Wsamples
+    GLOBAL_MU = mu_arr
+    GLOBAL_SIGMA = sigma_arr
+    GLOBAL_RF = r_free
+    GLOBAL_N = n_select
+
+
+def process_combination(subset):
+    # subset: tuple of asset indices
     idx = list(subset)
-    mu_sub = mu_all[idx]
-    sigma_sub = sigma_all[np.ix_(idx, idx)]
-    # derive seed per combination
-    seed = seed_offset
-    sr, w = simulate_subset(mu_sub, sigma_sub, len(idx), n_samples, r_free, seed=seed)
-    return subset, sr, w
+    mu_sub = GLOBAL_MU[idx]
+    sigma_sub = GLOBAL_SIGMA[np.ix_(idx, idx)]
+    # use precomputed weight samples
+    W = GLOBAL_W  # shape (n_samples, n_select)
+    # portfolio returns and risks
+    mu_p = W.dot(mu_sub)
+    var_p = np.einsum("ij,ij->i", W.dot(sigma_sub), W)
+    sigma_p = np.sqrt(var_p)
+    # Sharpe ratios
+    sr = np.where(sigma_p > 0, (mu_p - GLOBAL_RF) / sigma_p, -np.inf)
+    # pick best
+    best = int(np.argmax(sr))
+    return subset, float(sr[best]), W[best]
 
 
 def optimize_portfolio(
@@ -35,23 +58,40 @@ def optimize_portfolio(
     n_assets = len(tickers)
     # Prepare all combinations of asset indices
     combos = itertools.combinations(range(n_assets), n_select)
-    # Enumerator for reproducible seeds
-    args_iter = (
-        (base_seed + i, subset, mu, sigma, n_samples, r_free)
-        for i, subset in enumerate(combos)
-    )
-
     total = math.comb(n_assets, n_select)
+    # Pre-generate sample weights once for all combinations
+    rng = np.random.default_rng(base_seed)
+    raw = rng.dirichlet(np.ones(n_select), size=n_samples)
+
+    # Euclidean projection onto simplex with box constraints
+    def _proj(x: np.ndarray) -> np.ndarray:
+        low, high = np.min(x - 0.2), np.max(x)
+        for _ in range(50):
+            t = (low + high) / 2
+            w = np.minimum(np.maximum(x - t, 0), 0.2)
+            if w.sum() > 1:
+                low = t
+            else:
+                high = t
+        return np.minimum(np.maximum(x - high, 0), 0.2)
+
+    Wsamples = np.vstack([_proj(raw[i]) for i in range(n_samples)])
     best_sr = -np.inf
     best_res = None
-
-    with ProcessPoolExecutor(max_workers=workers) as executor:
-        # executor.map returns results in order of args; wrap with tqdm for progress
+    # Determine chunksize to balance overhead and responsiveness
+    chunksize = max(1, total // (workers * 20))
+    with ProcessPoolExecutor(
+        max_workers=workers,
+        initializer=init_worker,
+        initargs=(Wsamples, mu, sigma, r_free, n_select),
+    ) as executor:
+        task_iter = executor.map(process_combination, combos, chunksize=chunksize)
         for subset, sr, w in tqdm(
-            executor.map(process_combination, args_iter, chunksize=10),
+            task_iter,
             total=total,
             desc="Processando combinações",
             unit="combo",
+            miniters=chunksize,
         ):
             if sr > best_sr:
                 best_sr = sr
