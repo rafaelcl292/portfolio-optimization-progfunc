@@ -9,7 +9,13 @@ import numpy as np
 from tqdm import tqdm
 
 from data_loader.data_loader import load_price_data
-from utils.finance import annualize_covariance, annualize_returns, compute_daily_returns
+from utils.finance import (
+    annualize_covariance,
+    annualize_returns,
+    compute_daily_returns,
+    project_weights,
+    best_sharpe,
+)
 
 """
 Worker initializer: set global data for combination processing.
@@ -35,17 +41,9 @@ def process_combination(subset):
     idx = list(subset)
     mu_sub = GLOBAL_MU[idx]
     sigma_sub = GLOBAL_SIGMA[np.ix_(idx, idx)]
-    # use precomputed weight samples
     W = GLOBAL_W  # shape (n_samples, n_select)
-    # portfolio returns and risks
-    mu_p = W.dot(mu_sub)
-    var_p = np.einsum("ij,ij->i", W.dot(sigma_sub), W)
-    sigma_p = np.sqrt(var_p)
-    # Sharpe ratios
-    sr = np.where(sigma_p > 0, (mu_p - GLOBAL_RF) / sigma_p, -np.inf)
-    # pick best
-    best = int(np.argmax(sr))
-    return subset, float(sr[best]), W[best]
+    sr_best, w_best = best_sharpe(mu_sub, sigma_sub, W, GLOBAL_RF)
+    return subset, sr_best, w_best
 
 
 def optimize_portfolio(
@@ -62,20 +60,10 @@ def optimize_portfolio(
     # Pre-generate sample weights once for all combinations
     rng = np.random.default_rng(base_seed)
     raw = rng.dirichlet(np.ones(n_select), size=n_samples)
-
-    # Euclidean projection onto simplex with box constraints
-    def _proj(x: np.ndarray) -> np.ndarray:
-        low, high = np.min(x - 0.2), np.max(x)
-        for _ in range(50):
-            t = (low + high) / 2
-            w = np.minimum(np.maximum(x - t, 0), 0.2)
-            if w.sum() > 1:
-                low = t
-            else:
-                high = t
-        return np.minimum(np.maximum(x - high, 0), 0.2)
-
-    Wsamples = np.vstack([_proj(raw[i]) for i in range(n_samples)])
+    # Project samples onto bounded simplex
+    Wsamples = np.vstack(
+        [project_weights(raw[i], max_weight=0.2) for i in range(n_samples)]
+    )
     best_sr = -np.inf
     best_res = None
     # Determine chunksize to balance overhead and responsiveness
