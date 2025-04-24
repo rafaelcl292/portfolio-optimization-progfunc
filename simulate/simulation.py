@@ -18,6 +18,7 @@ def simulate_subset(
     rng = np.random.default_rng(seed)
     # Amostrar de Dirichlet
     raw = rng.dirichlet(np.ones(n_assets), size=n_samples)
+
     # Projetar cada vetor no simplex com bound por coordenada
     def _proj(vec: np.ndarray) -> np.ndarray:
         # projecão Euclidiana em {w >= 0, w <= max_weight, sum(w)=1}
@@ -33,6 +34,7 @@ def simulate_subset(
             else:
                 high = t
         return np.minimum(np.maximum(x - high, 0), max_weight)
+
     W = np.vstack([_proj(raw[i]) for i in range(n_samples)])
 
     # Retorno e risco da carteira

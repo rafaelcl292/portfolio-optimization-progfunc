@@ -1,8 +1,12 @@
+import argparse
 import itertools
+import math
 import os
+import time
 from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
+from tqdm import tqdm
 
 from data_loader.data_loader import load_price_data
 from simulate.simulation import simulate_subset
@@ -21,12 +25,12 @@ def process_combination(args):
     return subset, sr, w
 
 
-def optimize_portfolio(mu, sigma, tickers, n_select, n_samples, r_free, workers, base_seed):
+def optimize_portfolio(
+    mu, sigma, tickers, n_select, n_samples, r_free, workers, base_seed
+):
     """
     Retorna (best_sr, best_subset, best_weights) otimizado.
     """
-    import itertools
-    from concurrent.futures import ProcessPoolExecutor
 
     n_assets = len(tickers)
     # Prepare all combinations of asset indices
@@ -36,13 +40,11 @@ def optimize_portfolio(mu, sigma, tickers, n_select, n_samples, r_free, workers,
         (base_seed + i, subset, mu, sigma, n_samples, r_free)
         for i, subset in enumerate(combos)
     )
-    # Total number of combinations for progress bar
-    import math
+
     total = math.comb(n_assets, n_select)
     best_sr = -np.inf
     best_res = None
-    # Process combinations in parallel with a tqdm progress bar
-    from tqdm import tqdm
+
     with ProcessPoolExecutor(max_workers=workers) as executor:
         # executor.map returns results in order of args; wrap with tqdm for progress
         for subset, sr, w in tqdm(
@@ -57,10 +59,8 @@ def optimize_portfolio(mu, sigma, tickers, n_select, n_samples, r_free, workers,
     subset_idx, weights = best_res
     return best_sr, subset_idx, weights
 
-def main():
-    import argparse
 
-    # Argumentos de linha de comando
+def main():
     parser = argparse.ArgumentParser(description="Otimização de Carteiras Dow Jones")
     parser.add_argument(
         "--select", type=int, default=25, help="Número de ativos na carteira"
@@ -74,11 +74,12 @@ def main():
     parser.add_argument(
         "--workers", type=int, default=None, help="Número de processos paralelos"
     )
+    parser.add_argument("--seed", type=int, default=0, help="Semente base para RNG")
     parser.add_argument(
-        "--seed", type=int, default=0, help="Semente base para RNG"
-    )
-    parser.add_argument(
-        "--benchmark", type=int, default=0, help="Número de execuções para comparar tempo (serial vs paralelo)"
+        "--benchmark",
+        type=int,
+        default=0,
+        help="Número de execuções para comparar tempo (serial vs paralelo)",
     )
     args = parser.parse_args()
 
@@ -133,13 +134,14 @@ def main():
 
     # Se benchmark ativado, comparar serial x paralelo
     if n_bench > 0:
-        import time
         times = {"serial": [], "parallel": []}
         for mode in [("serial", 1), ("parallel", n_workers)]:
             label, workers = mode
             for _ in range(n_bench):
                 t0 = time.perf_counter()
-                optimize_portfolio(mu, sigma, tickers, n_select, n_samples, r_free, workers, base_seed)
+                optimize_portfolio(
+                    mu, sigma, tickers, n_select, n_samples, r_free, workers, base_seed
+                )
                 times[label].append(time.perf_counter() - t0)
         print("Benchmark resultados (segundos):")
         for label in ["serial", "parallel"]:
@@ -147,11 +149,10 @@ def main():
             print(f" {label}: mean={np.mean(arr):.2f}, std={np.std(arr):.2f}")
         return
 
-    # Execução padrão
-    # Mostrar inicio da otimização
-    import math
     total_combos = math.comb(n_assets, n_select)
-    print(f"Iniciando otimização com {total_combos} combinações, {n_samples} simulações cada, r_free={r_free}")
+    print(
+        f"Iniciando otimização com {total_combos} combinações, {n_samples} simulações cada, r_free={r_free}"
+    )
     best_sr, subset_idx, w = optimize_portfolio(
         mu, sigma, tickers, n_select, n_samples, r_free, n_workers, base_seed
     )
