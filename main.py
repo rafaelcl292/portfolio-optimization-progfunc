@@ -29,16 +29,28 @@ def optimize_portfolio(mu, sigma, tickers, n_select, n_samples, r_free, workers,
     from concurrent.futures import ProcessPoolExecutor
 
     n_assets = len(tickers)
+    # Prepare all combinations of asset indices
     combos = itertools.combinations(range(n_assets), n_select)
-    # Enumerate for reproducible seeds
+    # Enumerator for reproducible seeds
     args_iter = (
         (base_seed + i, subset, mu, sigma, n_samples, r_free)
         for i, subset in enumerate(combos)
     )
+    # Total number of combinations for progress bar
+    import math
+    total = math.comb(n_assets, n_select)
     best_sr = -np.inf
     best_res = None
+    # Process combinations in parallel with a tqdm progress bar
+    from tqdm import tqdm
     with ProcessPoolExecutor(max_workers=workers) as executor:
-        for subset, sr, w in executor.map(process_combination, args_iter, chunksize=10):
+        # executor.map returns results in order of args; wrap with tqdm for progress
+        for subset, sr, w in tqdm(
+            executor.map(process_combination, args_iter, chunksize=10),
+            total=total,
+            desc="Processando combinações",
+            unit="combo",
+        ):
             if sr > best_sr:
                 best_sr = sr
                 best_res = (subset, w)
@@ -113,6 +125,7 @@ def main():
     n_bench = args.benchmark
 
     # Carregar dados
+    print(f"Carregando dados para {len(tickers)} tickers de {start} a {end}...")
     price_df = load_price_data(tickers, start, end)
     daily_returns = compute_daily_returns(price_df)
     mu = annualize_returns(daily_returns).to_numpy()
@@ -135,6 +148,10 @@ def main():
         return
 
     # Execução padrão
+    # Mostrar inicio da otimização
+    import math
+    total_combos = math.comb(n_assets, n_select)
+    print(f"Iniciando otimização com {total_combos} combinações, {n_samples} simulações cada, r_free={r_free}")
     best_sr, subset_idx, w = optimize_portfolio(
         mu, sigma, tickers, n_select, n_samples, r_free, n_workers, base_seed
     )
