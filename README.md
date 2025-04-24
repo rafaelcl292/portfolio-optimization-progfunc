@@ -25,14 +25,22 @@ Projeto em Python que simula e otimiza carteiras de ações do índice Dow Jones
    ```
 
 ## Uso
-- Para executar a otimização:
-  ```bash
-  uv run python main.py
-  ```
+ - Para executar a otimização padrão:
+   ```bash
+   uv run python main.py --select 25 --samples 1000
+   ```
+ - Para fixar a semente (reprodutibilidade):
+   ```bash
+   uv run python main.py --select 25 --samples 1000 --seed 42
+   ```
+ - Para rodar benchmark serial vs paralelo (ex: 5 execuções):
+   ```bash
+   uv run python main.py --benchmark 5
+   ```
 
 ## Configurações
 - Período de análise (start/end) e lista de tickers definidos em `main.py`.
-- Número de ativos selecionados (25 de 30), número de simulações (1000 por combinação) e taxa livre de risco também podem ser ajustados ali.
+- Número de ativos selecionados (`--select`), número de simulações por combinação (`--samples`), taxa livre de risco (`--free-rate`), seed (`--seed`) e benchmark (`--benchmark`) podem ser ajustados.
 
 ## Extras
 - Paralelismo via `concurrent.futures.ProcessPoolExecutor` para acelerar as simulações.
