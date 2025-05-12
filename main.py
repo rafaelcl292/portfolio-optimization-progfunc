@@ -12,9 +12,9 @@ from data_loader.data_loader import load_price_data
 from utils.finance import (
     annualize_covariance,
     annualize_returns,
+    best_sharpe,
     compute_daily_returns,
     project_weights,
-    best_sharpe,
 )
 
 """

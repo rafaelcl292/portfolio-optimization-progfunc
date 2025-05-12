@@ -1,5 +1,5 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 
 def compute_daily_returns(prices: pd.DataFrame) -> pd.DataFrame:
@@ -28,11 +28,10 @@ def annualize_covariance(
     """
     cov_daily = daily_returns.cov()
     return cov_daily * periods_per_year
-  
+
+
 def project_weights(
-    x: np.ndarray,
-    max_weight: float = 0.2,
-    tol: int = 50
+    x: np.ndarray, max_weight: float = 0.2, tol: int = 50
 ) -> np.ndarray:
     """
     Project vector x onto the simplex with box constraints:
@@ -49,11 +48,9 @@ def project_weights(
             high = t
     return np.minimum(np.maximum(x - high, 0), max_weight)
 
+
 def best_sharpe(
-    mu: np.ndarray,
-    sigma: np.ndarray,
-    W: np.ndarray,
-    r_free: float = 0.0
+    mu: np.ndarray, sigma: np.ndarray, W: np.ndarray, r_free: float = 0.0
 ) -> tuple[float, np.ndarray]:
     """
     Given expected returns mu, covariance matrix sigma, and an array of

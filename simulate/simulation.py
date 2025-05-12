@@ -1,5 +1,6 @@
 import numpy as np
-from utils.finance import project_weights, best_sharpe
+
+from utils.finance import best_sharpe, project_weights
 
 
 def simulate_subset(
